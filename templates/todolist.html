@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+{% load static %}
+<html>
+<head>
+    <title>TodoMVC</title>
+    <script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <link rel="stylesheet" type="text/css" href="{% static 'css/index.css' %}"/>
+</head>
+<body>
+    {% verbatim myblock %}
+    <section id="todoapp" class="todoapp" v-show="isAlive">
+        <header class="header">
+            <h1>记事本</h1>
+            <input class="new-todo" autofocus autocomplete="off" placeholder="有什么需要做的事?" v-model="newItem" @keyup.enter="addItem"/>
+        </header>
+        <section class="main" v-show="items.length">
+            <input id="toggle-all" class="toggle-all" type="checkbox"/>
+            <label for="toggle-all"></label>
+            <ul class="todo-list">
+                <li v-for="item in filteredTodos" class="todo" :key="item.id" :class="{ completed: item.done, editing: item.id == editItemId }">
+                    <div class="view">
+                        <input class="toggle" type="checkbox" v-model="item.done" @change="do_edit(item)"/>
+                        <label @dblclick="edit_input(item)">{{ item.message }}</label>
+                        <button class="destroy" @click="destroy(item.id)"></button>
+                    </div>
+                    <input class="edit" type="text" v-model="item.message" v-focus="item.id == editItemId" @blur="do_edit(item)" @keyup.enter="do_edit(item)" @keyup.esc="cancel_edit(item)"/>
+                </li>
+            </ul>
+        </section>
+        <footer class="footer" v-show="items.length">
+            <span class="todo-count">
+                剩 <strong>{{ remaining }}</strong> 条
+            </span>
+            <ul class="filters">
+                <li>
+                    <a href="#/all">全部</a>
+                </li>
+                <li>
+                    <a href="#/active">未完成</a>
+                </li>
+                <li>
+                    <a href="#/completed">已完成</a>
+                </li>
+            </ul>
+            <button class="clear-completed" v-show="items.length > remaining" @click="clear">清空已完成</button>
+        </footer>
+    </section>
+    <footer class="info">
+        <p>双击编辑事件</p>
+    </footer>
+    {% endverbatim myblock %}
+</body>
+<script>
+
+    var filters = {
+        all: function(items) {
+            return items
+        },
+        active: function(items) {
+            return items.filter(function(item) {
+                return !item.done;
+            });
+        },
+        completed: function(items) {
+            return items.filter(function(item) {
+                return item.done;
+            });
+        },
+
+    };
+    var vue = new Vue({
+        el: '#todoapp',
+        data:{
+            items:[],
+            newItem: '',
+            editItemId: null,
+            isAlive: true,
+            visibility: "all",
+        },
+        methods:{
+            reload: function() {
+                this.isAlive = false;
+                this.$nextTick( function() {
+                    this.isAlive = true;
+                })
+            },
+            addItem: function() {
+                if (this.newItem != '') {
+                    axios.post('/items/', {'message': this.newItem}).then(res => {
+                        this.items.reverse().push(res.data);
+                        this.items.reverse();
+                        this.newItem = '';
+                        this.reload();
+                    }).catch((e) => {
+                        console.log('错误',e);
+                    })
+                }
+            },
+            clear: function () {
+                axios.delete('/clear/').then(res => {
+                    this.items = res.data.data;
+                });
+                this.reload();
+            },
+            destroy: function(id) {
+                axios.delete(`/oneitem/${id}/`).then(res => {
+                    this.items = res.data.data;
+                });
+                this.reload();
+
+            },
+            edit_input: function (item) {
+                this.editItemId = item.id;
+                this.beforeEditCache = item.message;
+            },
+            do_edit: function(item) {
+                this.editItemId = null;
+                axios.put(`/oneitem/${item.id}/`, {'message': item.message, 'done': item.done}).then(res => {
+                    this.reload();
+                })
+            },
+            cancel_edit: function (item) {
+                this.editItemId = null;
+                item.message = this.beforeEditCache;
+            }
+        },
+        directives: {
+          "focus": function(el, binding) {
+            if (binding.value) {
+              el.focus();
+            }
+          }
+        },
+        mounted:function() {
+            axios.get('/items/').then(res => {
+                this.items = res.data;
+                console.log(res.data);
+            }).catch((e) => {
+                console.log('获取数据失败', e);
+            })
+        },
+        computed: {
+            filteredTodos: function() {
+                return filters[this.visibility](this.items);
+            },
+            remaining: function () {
+                return filters.active(this.items).length;
+            },
+        }
+    });
+
+    function onHashChange() {
+        var visibility = window.location.hash.replace(/#\/?/, "");
+        if (filters[visibility]) {
+            vue.visibility = visibility;
+        } else {
+            window.location.hash = "";
+            vue.visibility = "all";
+        }
+      }
+
+      window.addEventListener("hashchange", onHashChange);
+      onHashChange();
+</script>
+</html>
